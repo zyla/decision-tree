@@ -98,6 +98,10 @@ impl ColumnBuilder for StringColumnBuilder {
 
 use rand::seq::IteratorRandom;
 
+fn compare_f32(a: f32, b: f32) -> std::cmp::Ordering {
+    a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+}
+
 fn quantiles(values: &[f32], nquantiles: usize) -> Vec<f32> {
     let samples_per_quantile = 10;
 
@@ -106,7 +110,7 @@ fn quantiles(values: &[f32], nquantiles: usize) -> Vec<f32> {
         .iter()
         .copied()
         .choose_multiple(&mut rng, nquantiles * samples_per_quantile);
-    samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    samples.sort_by(|a, b| compare_f32(*a, *b));
 
     samples
         .chunks(samples.len() / nquantiles)
@@ -120,7 +124,7 @@ fn counts(values: &[f32], quantiles: &[f32]) -> Vec<usize> {
     counts.push(0);
     for value in values {
         let i = quantiles
-            .binary_search_by(|a| a.partial_cmp(value).unwrap_or(std::cmp::Ordering::Equal))
+            .binary_search_by(|a| compare_f32(*a, *value))
             .unwrap_or_else(|x| x);
         counts[i] += 1;
     }
@@ -132,7 +136,7 @@ fn quantize(values: &[f32], quantiles: &[f32]) -> Vec<u8> {
         .iter()
         .map(|value| {
             quantiles
-                .binary_search_by(|a| a.partial_cmp(value).unwrap_or(std::cmp::Ordering::Equal))
+                .binary_search_by(|a| compare_f32(*a, *value))
                 .unwrap_or_else(|x| x) as u8
         })
         .collect()
@@ -152,11 +156,53 @@ fn quantize_column(col: &mut Column) {
     }
 }
 
+fn variance_buckets(values: &[u8], labels: &[f32]) -> Vec<(usize, f32)> {
+    let avg: f32 = labels.iter().copied().sum::<f32>() / (labels.len() as f32);
+    let mut buckets: Vec<(usize, f32)> = (0..256).map(|_| (0, 0.)).collect();
+    for (value, label) in values.iter().copied().zip(labels) {
+        buckets[value as usize].0 += 1;
+        buckets[value as usize].1 += (label - avg) * (label - avg);
+    }
+    buckets
+}
+
+fn variance_buckets_to_variances<I>(buckets: I) -> impl Iterator<Item = f32>
+where
+    I: Iterator<Item = (usize, f32)>,
+{
+    let mut count_so_far = 0usize;
+    let mut sum_so_far = 0f32;
+    buckets.map(move |(count, sum)| {
+        count_so_far += count;
+        sum_so_far += sum;
+        sum_so_far / count_so_far as f32
+    })
+}
+
 fn main() -> io::Result<()> {
     let mut dataset = Dataset::from_csv(csv::Reader::from_reader(io::stdin()))?;
+    let labels = match dataset.columns.remove("Humidity") {
+        Some(Column::Float(data)) => data,
+        _ => panic!("expected Float"),
+    };
     for (colname, column) in dataset.columns.iter_mut() {
         println!("{}", colname);
         quantize_column(column);
+        match column {
+            Column::QuantizedFloat(_, data) => {
+                let variances: Vec<_> =
+                    variance_buckets_to_variances(variance_buckets(data, &labels).iter().copied())
+                        .collect();
+                let best_variance = variances
+                    .iter()
+                    .copied()
+                    .enumerate()
+                    .filter(|(_, v)| !v.is_nan())
+                    .min_by(|(_, a), (_, b)| compare_f32(*a, *b));
+                println!("{:?}", best_variance);
+            }
+            _ => {}
+        }
     }
     Ok(())
 }
