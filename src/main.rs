@@ -1,8 +1,8 @@
 extern crate csv;
 
-use std::mem;
-use std::io;
 use std::collections::HashMap;
+use std::io;
+use std::mem;
 
 #[derive(Debug)]
 struct Dataset {
@@ -10,20 +10,25 @@ struct Dataset {
 }
 
 impl Dataset {
-    fn from_csv<F>(mut rdr: csv::Reader<F>) -> io::Result<Self> where F: std::io::Read {
+    fn from_csv<F>(mut rdr: csv::Reader<F>) -> io::Result<Self>
+    where
+        F: std::io::Read,
+    {
         let mut records = rdr.records();
-        let mut builders: Vec<Box<dyn ColumnBuilder>> =
-                if let Some(Ok(record)) = records.next() {
-                    record.iter().map(|value|
-                                      if let Ok(_) = value.parse::<f32>() {
- Box::new(FloatColumnBuilder::default()) as Box<dyn ColumnBuilder>
-                                      } else {
-                                          Box::new(StringColumnBuilder::default())  as Box<dyn ColumnBuilder>
-                                      }).collect()
-
-                } else {
-                    return Err(io::ErrorKind::NotFound.into());
-                };
+        let mut builders: Vec<Box<dyn ColumnBuilder>> = if let Some(Ok(record)) = records.next() {
+            record
+                .iter()
+                .map(|value| {
+                    if value.parse::<f32>().is_ok() {
+                        Box::new(FloatColumnBuilder::default()) as Box<dyn ColumnBuilder>
+                    } else {
+                        Box::new(StringColumnBuilder::default()) as Box<dyn ColumnBuilder>
+                    }
+                })
+                .collect()
+        } else {
+            return Err(io::ErrorKind::NotFound.into());
+        };
 
         for result in records {
             let record = result?;
@@ -31,8 +36,13 @@ impl Dataset {
                 builders[i].append(datum);
             }
         }
-        Ok(Dataset{
-            columns: rdr.headers()?.iter().zip(builders.into_iter()).map(|(colname, mut builder)| (colname.into(), builder.build())).collect()
+        Ok(Dataset {
+            columns: rdr
+                .headers()?
+                .iter()
+                .zip(builders.into_iter())
+                .map(|(colname, mut builder)| (colname.into(), builder.build()))
+                .collect(),
         })
     }
 }
