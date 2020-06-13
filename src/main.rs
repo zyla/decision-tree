@@ -103,7 +103,7 @@ fn compare_f32(a: f32, b: f32) -> std::cmp::Ordering {
 }
 
 fn quantiles(values: &[f32], nquantiles: usize) -> Vec<f32> {
-    let samples_per_quantile = 10;
+    let samples_per_quantile = 100;
 
     let mut rng = rand::thread_rng();
     let mut samples: Vec<f32> = values
@@ -185,24 +185,46 @@ fn main() -> io::Result<()> {
         Some(Column::Float(data)) => data,
         _ => panic!("expected Float"),
     };
-    for (colname, column) in dataset.columns.iter_mut() {
-        println!("{}", colname);
+    for (_, column) in dataset.columns.iter_mut() {
         quantize_column(column);
-        match column {
-            Column::QuantizedFloat(_, data) => {
+    }
+    let mut candidates = dataset
+        .columns
+        .iter()
+        .flat_map(|(colname, column)| match column {
+            Column::QuantizedFloat(quantiles, data) => {
+                let buckets = variance_buckets(&data, &labels);
                 let variances: Vec<_> =
-                    variance_buckets_to_variances(variance_buckets(data, &labels).iter().copied())
-                        .collect();
-                let best_variance = variances
+                    variance_buckets_to_variances(buckets.iter().copied()).collect();
+                println!(
+                    "{} {:?}",
+                    colname,
+                    quantiles
+                        .iter()
+                        .zip(variances.iter())
+                        .zip(buckets.iter())
+                        .map(|((q, v), (n, _))| (q, n, v))
+                        .collect::<Vec<_>>()
+                );
+                variances
                     .iter()
                     .copied()
                     .enumerate()
                     .filter(|(_, v)| !v.is_nan())
-                    .min_by(|(_, a), (_, b)| compare_f32(*a, *b));
-                println!("{:?}", best_variance);
+                    .min_by(|(_, a), (_, b)| compare_f32(*a, *b))
+                    .and_then(|(i, v)| {
+                        if i + 1 < quantiles.len() {
+                            Some((colname.clone(), quantiles[i + 1], v))
+                        } else {
+                            None
+                        }
+                    })
             }
-            _ => {}
-        }
-    }
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|(_, _, v1), (_, _, v2)| compare_f32(*v1, *v2));
+    println!("*****************************");
+    println!("{:#?}", candidates);
     Ok(())
 }
