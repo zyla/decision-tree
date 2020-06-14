@@ -33,12 +33,12 @@ impl Dataset {
                 return Err(std::io::ErrorKind::NotFound.into());
             };
 
-        let mut chunk: Vec<csv::StringRecord> = Vec::with_capacity(32);
+        let mut chunk: Vec<csv::ByteRecord> = Vec::with_capacity(32);
         while chunk.len() < chunk.capacity() {
-            chunk.push(csv::StringRecord::new());
+            chunk.push(csv::ByteRecord::new());
         }
         let mut index_in_chunk = 0;
-        while rdr.read_record(&mut chunk[index_in_chunk])? {
+        while rdr.read_byte_record(&mut chunk[index_in_chunk])? {
             index_in_chunk += 1;
             if index_in_chunk == chunk.len() {
                 for (index, _, ref mut builder) in &mut builders {
@@ -46,7 +46,7 @@ impl Dataset {
                         &chunk
                             .iter()
                             .map(|record| &record[*index])
-                            .collect::<Vec<&str>>(),
+                            .collect::<Vec<&[u8]>>(),
                     );
                 }
                 index_in_chunk = 0;
@@ -67,14 +67,15 @@ impl Dataset {
     }
 }
 
-fn parse_f32(s: &str) -> f32 {
+#[allow(clippy::while_let_on_iterator)]
+fn parse_f32(s: &[u8]) -> f32 {
     let mut ival = 0u32;
     let mut fraction_multiplier = 0.1f32;
-    let mut chars = s.bytes();
+    let mut chars = s.iter();
     let (sign, mut chars) = match chars.next() {
         Some(b'-') => (-1., chars),
         Some(b'N') => return std::f32::NAN,
-        _ => (1., s.bytes()),
+        _ => (1., s.iter()),
     };
     while let Some(c) = chars.next() {
         match c {
@@ -94,7 +95,7 @@ fn parse_f32(s: &str) -> f32 {
 }
 
 trait ColumnBuilder {
-    fn append(&mut self, values: &[&str]);
+    fn append(&mut self, values: &[&[u8]]);
     fn build(&mut self) -> Column;
 }
 
@@ -102,7 +103,7 @@ trait ColumnBuilder {
 struct FloatColumnBuilder(Vec<f32>);
 
 impl ColumnBuilder for FloatColumnBuilder {
-    fn append(&mut self, values: &[&str]) {
+    fn append(&mut self, values: &[&[u8]]) {
         self.0.extend(values.iter().copied().map(parse_f32));
     }
     fn build(&mut self) -> Column {
