@@ -33,11 +33,14 @@ impl Dataset {
                 return Err(std::io::ErrorKind::NotFound.into());
             };
 
-        let mut chunk: Vec<_> = Vec::with_capacity(1000);
-        for result in records {
-            let record = result?;
-            chunk.push(record);
-            if chunk.len() == chunk.capacity() {
+        let mut chunk: Vec<csv::StringRecord> = Vec::with_capacity(32);
+        while chunk.len() < chunk.capacity() {
+            chunk.push(csv::StringRecord::new());
+        }
+        let mut index_in_chunk = 0;
+        while rdr.read_record(&mut chunk[index_in_chunk])? {
+            index_in_chunk += 1;
+            if index_in_chunk == chunk.len() {
                 for (index, _, ref mut builder) in &mut builders {
                     builder.append(
                         &chunk
@@ -46,7 +49,7 @@ impl Dataset {
                             .collect::<Vec<&str>>(),
                     );
                 }
-                chunk.clear();
+                index_in_chunk = 0;
             }
         }
         let mut columns = builders
