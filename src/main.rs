@@ -161,12 +161,40 @@ trait ColumnBuilder {
 struct FloatColumnBuilder(Vec<f32>);
 
 impl ColumnBuilder for FloatColumnBuilder {
-    fn append(&mut self, value: &str) {
-        self.0.push(value.parse().unwrap());
+    fn append(&mut self, s: &str) {
+        self.0.push(parse_f32(s));
     }
     fn build(&mut self) -> Column {
         Column::Float(mem::replace(&mut self.0, vec![]))
     }
+}
+
+fn parse_f32(s: &str) -> f32 {
+    let mut value = 0f32;
+    let mut in_fraction = false;
+    let mut fraction_multiplier = 0.1f32;
+    let mut chars = s.chars();
+    let (sign, rest) = match chars.next() {
+        Some('-') => (-1., chars),
+        _ => (1., s.chars()),
+    };
+    for c in rest {
+        match c.to_digit(10) {
+            Some(val) => {
+                if in_fraction {
+                    value += (val as f32) * fraction_multiplier;
+                    fraction_multiplier *= 0.1;
+                } else {
+                    value *= 10.;
+                    value += val as f32;
+                }
+            }
+            None => {
+                in_fraction = true;
+            }
+        }
+    }
+    value * sign
 }
 
 #[derive(Debug, Default)]
