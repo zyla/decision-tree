@@ -48,9 +48,10 @@ fn quantize(values: &[f32], quantiles: &[f32]) -> Vec<u8> {
 #[inline(never)]
 pub fn quantize_column_by_random_sample(col: &mut Column) {
     match col {
-        Column::Float(data) => {
-            let quantiles = quantiles_from_random_sample(&data, 255);
-            let qdata = quantize(&data, &quantiles);
+        Column::Float(values) => {
+            let quantiles = quantiles_from_random_sample(&values, 255);
+            let qdata = quantize(&values, &quantiles);
+//            println!("{:?}", values.iter().zip(&qdata).take(1000).collect::<Vec<_>>());
             *col = Column::QuantizedFloat(quantiles, qdata)
         }
         _ => {}
@@ -73,15 +74,15 @@ pub fn quantize_column_uniform(col: &mut Column) {
                 .copied()
                 .max_by(|a, b| compare_f32(*a, *b))
                 .unwrap();
-            let step = (max - min) / ((nquantiles - 1) as f32);
-            let quantiles = (0..nquantiles + 1)
+            let step = (max - min) / ((nquantiles + 1) as f32);
+            let quantiles = (1..nquantiles + 1)
                 .map(|i| min + step * (i as f32))
                 .collect();
             let step_inv = ((nquantiles - 1) as f32) / (max - min);
 
             let qdata = values
                 .iter()
-                .map(|value| ((value - min) * step_inv) as u8)
+                .map(|value| ((value - min) / step).floor() as u8)
                 .collect();
             *col = Column::QuantizedFloat(quantiles, qdata)
         }

@@ -26,7 +26,7 @@ fn main() -> io::Result<()> {
     })?;
     timed("quantize", || {
         for (_, column) in dataset.inputs.iter_mut() {
-            quantize_column_uniform(column);
+            quantize_column_by_random_sample(column);
         }
     });
     let tree = timed("build tree", || build_tree(dataset, 5));
