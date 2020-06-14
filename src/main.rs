@@ -42,10 +42,20 @@ impl Dataset {
                 return Err(io::ErrorKind::NotFound.into());
             };
 
+        let mut chunk: Vec<_> = Vec::with_capacity(1000);
         for result in records {
             let record = result?;
-            for (index, _, ref mut builder) in &mut builders {
-                builder.append(&record[*index]);
+            chunk.push(record);
+            if chunk.len() == chunk.capacity() {
+                for (index, _, ref mut builder) in &mut builders {
+                    builder.append(
+                        &chunk
+                            .iter()
+                            .map(|record| &record[*index])
+                            .collect::<Vec<&str>>(),
+                    );
+                }
+                chunk.clear();
             }
         }
         let mut columns = builders
@@ -153,7 +163,7 @@ impl Column {
 }
 
 trait ColumnBuilder {
-    fn append(&mut self, value: &str);
+    fn append(&mut self, values: &[&str]);
     fn build(&mut self) -> Column;
 }
 
@@ -161,8 +171,8 @@ trait ColumnBuilder {
 struct FloatColumnBuilder(Vec<f32>);
 
 impl ColumnBuilder for FloatColumnBuilder {
-    fn append(&mut self, s: &str) {
-        self.0.push(parse_f32(s));
+    fn append(&mut self, values: &[&str]) {
+        self.0.extend(values.iter().copied().map(parse_f32));
     }
     fn build(&mut self) -> Column {
         Column::Float(mem::replace(&mut self.0, vec![]))
@@ -197,6 +207,7 @@ fn parse_f32(s: &str) -> f32 {
     value * sign
 }
 
+/*
 #[derive(Debug, Default)]
 struct StringColumnBuilder(Vec<String>);
 
@@ -208,6 +219,7 @@ impl ColumnBuilder for StringColumnBuilder {
         Column::String(mem::replace(&mut self.0, vec![]))
     }
 }
+*/
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -258,6 +270,7 @@ fn quantize(values: &[f32], quantiles: &[f32]) -> Vec<u8> {
 }
 
 #[allow(clippy::single_match)]
+#[inline(never)]
 fn quantize_column(col: &mut Column) {
     match col {
         Column::Float(data) => {
@@ -396,6 +409,7 @@ impl<T> Tree<T> {
     }
 }
 
+#[inline(never)]
 fn build_tree(dataset: Dataset, max_depth: usize) -> Tree<Dataset> {
     match split(&dataset) {
         Some((colname, threshold, left, right)) if dataset.labels.len() >= 10 && max_depth > 0 => {
