@@ -6,13 +6,15 @@ use std::mem;
 
 #[derive(Debug)]
 struct Dataset {
-    columns: HashMap<String, Column>,
+    inputs: HashMap<String, Column>,
+    labels: Vec<f32>,
 }
 
 impl Dataset {
-    fn from_csv<F>(mut rdr: csv::Reader<F>) -> io::Result<Self>
+    fn from_csv<F, S>(mut rdr: csv::Reader<F>, label_name: S) -> io::Result<Self>
     where
         F: std::io::Read,
+        S: AsRef<str>,
     {
         let header = rdr.headers()?.clone();
         let mut records = rdr.records();
@@ -46,12 +48,44 @@ impl Dataset {
                 builder.append(&record[*index]);
             }
         }
+        let mut columns = builders
+            .iter_mut()
+            .map(|(_, ref colname, ref mut builder)| (colname.clone(), builder.build()))
+            .collect::<HashMap<_, _>>();
+        let labels = match columns.remove(label_name.as_ref()) {
+            Some(Column::Float(data)) => data,
+            _ => panic!("expected Float"),
+        };
         Ok(Dataset {
-            columns: builders
-                .iter_mut()
-                .map(|(_, ref colname, ref mut builder)| (colname.clone(), builder.build()))
-                .collect(),
+            inputs: columns,
+            labels,
         })
+    }
+
+    fn new() -> Self {
+        Dataset {
+            inputs: Default::default(),
+            labels: Default::default(),
+        }
+    }
+
+    fn partition<F>(&self, mut predicate: F) -> (Self, Self)
+    where
+        F: FnMut(usize) -> bool,
+    {
+        let mut left = Self::new();
+        let mut right = Self::new();
+        let (left_labels, right_labels) = self.labels.partition_by_index(&mut predicate);
+        left.labels = left_labels;
+        right.labels = right_labels;
+
+        for (colname, column) in &self.inputs {
+            let (left_col, right_col) = column.partition(&mut predicate);
+            left.inputs.insert(colname.clone(), left_col);
+            right.inputs.insert(colname.clone(), right_col);
+        }
+
+        (left, right)
     }
 }
 
@@ -63,6 +97,59 @@ enum Column {
 
     // FIXME: this is super inefficient.
     String(Vec<String>),
+}
+
+trait VecExt
+where
+    Self: Sized,
+{
+    fn partition_by_index<F>(&self, predicate: F) -> (Self, Self)
+    where
+        F: FnMut(usize) -> bool;
+}
+
+impl<T: Clone> VecExt for Vec<T> {
+    fn partition_by_index<F>(&self, mut predicate: F) -> (Self, Self)
+    where
+        F: FnMut(usize) -> bool,
+    {
+        let mut left = vec![];
+        let mut right = vec![];
+        for (i, item) in self.iter().enumerate() {
+            if predicate(i) {
+                left.push(item.clone());
+            } else {
+                right.push(item.clone());
+            }
+        }
+        (left, right)
+    }
+}
+
+impl Column {
+    fn partition<F>(&self, predicate: F) -> (Self, Self)
+    where
+        F: FnMut(usize) -> bool,
+    {
+        use Column::*;
+        match self {
+            Float(data) => {
+                let (left, right) = data.partition_by_index(predicate);
+                (Float(left), Float(right))
+            }
+            QuantizedFloat(quantiles, data) => {
+                let (left, right) = data.partition_by_index(predicate);
+                (
+                    QuantizedFloat(quantiles.clone(), left),
+                    QuantizedFloat(quantiles.clone(), right),
+                )
+            }
+            Column::String(data) => {
+                let (left, right) = data.partition_by_index(predicate);
+                (Column::String(left), Column::String(right))
+            }
+        }
+    }
 }
 
 trait ColumnBuilder {
@@ -179,23 +266,16 @@ where
     })
 }
 
-fn main() -> io::Result<()> {
-    let mut dataset = Dataset::from_csv(csv::Reader::from_reader(io::stdin()))?;
-    let labels = match dataset.columns.remove("Humidity") {
-        Some(Column::Float(data)) => data,
-        _ => panic!("expected Float"),
-    };
-    for (_, column) in dataset.columns.iter_mut() {
-        quantize_column(column);
-    }
+fn split(dataset: &Dataset) -> Option<(String, f32, Dataset, Dataset)> {
     let mut candidates = dataset
-        .columns
+        .inputs
         .iter()
         .flat_map(|(colname, column)| match column {
             Column::QuantizedFloat(quantiles, data) => {
-                let buckets = variance_buckets(&data, &labels);
+                let buckets = variance_buckets(&data, &dataset.labels);
                 let variances: Vec<_> =
                     variance_buckets_to_variances(buckets.iter().copied()).collect();
+                /*
                 println!(
                     "{} {:?}",
                     colname,
@@ -206,6 +286,7 @@ fn main() -> io::Result<()> {
                         .map(|((q, v), (n, _))| (q, n, v))
                         .collect::<Vec<_>>()
                 );
+                */
                 variances
                     .iter()
                     .copied()
@@ -214,7 +295,7 @@ fn main() -> io::Result<()> {
                     .min_by(|(_, a), (_, b)| compare_f32(*a, *b))
                     .and_then(|(i, v)| {
                         if i + 1 < quantiles.len() {
-                            Some((colname.clone(), quantiles[i + 1], v))
+                            Some((colname.clone(), i + 1, quantiles[i + 1], v))
                         } else {
                             None
                         }
@@ -223,8 +304,73 @@ fn main() -> io::Result<()> {
             _ => None,
         })
         .collect::<Vec<_>>();
-    candidates.sort_by(|(_, _, v1), (_, _, v2)| compare_f32(*v1, *v2));
+
+    if candidates.is_empty() {
+        return None;
+    }
+
+    candidates.sort_by(|(_, _, _, v1), (_, _, _, v2)| compare_f32(*v1, *v2));
     println!("*****************************");
     println!("{:#?}", candidates);
+
+    let (colname, threshold_index, threshold, _variance) = candidates.swap_remove(0);
+    let (left, right) = match &dataset.inputs[&colname] {
+        Column::QuantizedFloat(_, data) => {
+            dataset.partition(|i| (data[i] as usize) < threshold_index)
+        }
+        _ => panic!(
+            "Splitting on a non-QuantizedFloat column {:?} not supported",
+            colname
+        ),
+    };
+    Some((colname, threshold, left, right))
+}
+
+#[derive(Debug)]
+enum Tree<T> {
+    Leaf(T),
+    Branch(String, f32, Box<Tree<T>>, Box<Tree<T>>),
+}
+
+impl<T> Tree<T> {
+    fn map<F, B>(self, f: &F) -> Tree<B>
+    where
+        F: Fn(T) -> B,
+    {
+        use Tree::*;
+        match self {
+            Leaf(x) => Leaf(f(x)),
+            Branch(colname, threshold, left, right) => Branch(
+                colname,
+                threshold,
+                Box::new(left.map(f)),
+                Box::new(right.map(f)),
+            ),
+        }
+    }
+}
+
+fn build_tree(dataset: Dataset, max_depth: usize) -> Tree<Dataset> {
+    match split(&dataset) {
+        Some((colname, threshold, left, right)) if max_depth > 0 => {
+            println!("{} < {}", colname, threshold);
+            Tree::Branch(
+                colname,
+                threshold,
+                Box::new(build_tree(left, max_depth - 1)),
+                Box::new(build_tree(right, max_depth - 1)),
+            )
+        }
+        _ => Tree::Leaf(dataset),
+    }
+}
+
+fn main() -> io::Result<()> {
+    let mut dataset = Dataset::from_csv(csv::Reader::from_reader(io::stdin()), "Humidity")?;
+    for (_, column) in dataset.inputs.iter_mut() {
+        quantize_column(column);
+    }
+    let tree = build_tree(dataset, 5);
+    println!("{:#?}", tree.map(&|d| d.labels.len()));
     Ok(())
 }
