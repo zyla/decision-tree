@@ -398,14 +398,20 @@ impl<T> Tree<T> {
 
 fn build_tree(dataset: Dataset, max_depth: usize) -> Tree<Dataset> {
     match split(&dataset) {
-        Some((colname, threshold, left, right)) if max_depth > 0 => Tree::Branch(
-            colname,
-            threshold,
-            Box::new(build_tree(left, max_depth - 1)),
-            Box::new(build_tree(right, max_depth - 1)),
-        ),
+        Some((colname, threshold, left, right)) if dataset.labels.len() >= 10 && max_depth > 0 => {
+            Tree::Branch(
+                colname,
+                threshold,
+                Box::new(build_tree(left, max_depth - 1)),
+                Box::new(build_tree(right, max_depth - 1)),
+            )
+        }
         _ => Tree::Leaf(dataset),
     }
+}
+
+fn mean(xs: &[f32]) -> f32 {
+    xs.iter().copied().sum::<f32>() / (xs.len() as f32)
 }
 
 fn main() -> io::Result<()> {
@@ -414,6 +420,6 @@ fn main() -> io::Result<()> {
         quantize_column(column);
     }
     let tree = build_tree(dataset, 5);
-    println!("{:#?}", tree.map(&|d| d.labels.len()));
+    println!("{:#?}", tree.map(&|d| mean(&d.labels)));
     Ok(())
 }
