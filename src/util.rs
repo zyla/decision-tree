@@ -3,7 +3,7 @@ pub fn mean(xs: &[f32]) -> f32 {
 }
 
 pub fn compare_f32(a: f32, b: f32) -> std::cmp::Ordering {
-    a.partial_cmp(&b).unwrap_or(std::cmp::Ordering::Equal)
+    if a < b { std::cmp::Ordering::Less } else { std::cmp::Ordering::Greater }
 }
 
 pub trait VecExt
