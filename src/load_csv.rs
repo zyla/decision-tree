@@ -68,29 +68,27 @@ impl Dataset {
 }
 
 fn parse_f32(s: &str) -> f32 {
-    let mut value = 0f32;
-    let mut in_fraction = false;
+    let mut ival = 0u32;
     let mut fraction_multiplier = 0.1f32;
-    let mut chars = s.chars();
-    let (sign, rest) = match chars.next() {
-        Some('-') => (-1., chars),
-        _ => (1., s.chars()),
+    let mut chars = s.bytes();
+    let (sign, mut chars) = match chars.next() {
+        Some(b'-') => (-1., chars),
+        Some(b'N') => return std::f32::NAN,
+        _ => (1., s.bytes()),
     };
-    for c in rest {
-        match c.to_digit(10) {
-            Some(val) => {
-                if in_fraction {
-                    value += (val as f32) * fraction_multiplier;
-                    fraction_multiplier *= 0.1;
-                } else {
-                    value *= 10.;
-                    value += val as f32;
-                }
-            }
-            None => {
-                in_fraction = true;
+    while let Some(c) = chars.next() {
+        match c {
+            b'.' => break,
+            _ => {
+                ival *= 10;
+                ival += (c - b'0') as u32;
             }
         }
+    }
+    let mut value = ival as f32;
+    while let Some(c) = chars.next() {
+        value += ((c - b'0') as f32) * fraction_multiplier;
+        fraction_multiplier *= 0.1;
     }
     value * sign
 }
