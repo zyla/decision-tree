@@ -19,11 +19,15 @@ use crate::util::*;
 use crate::variance::*;
 
 fn main() -> io::Result<()> {
-    let mut dataset = Dataset::from_csv(csv::Reader::from_reader(io::stdin()), "Humidity")?;
-    for (_, column) in dataset.inputs.iter_mut() {
-        quantize_column(column, quantiles_from_random_sample);
-    }
-    let tree = build_tree(dataset, 5);
+    set_timing(true);
+
+    let mut dataset = timed("load csv", || Dataset::from_csv(csv::Reader::from_reader(io::stdin()), "Humidity"))?;
+    timed("quantize", || {
+        for (_, column) in dataset.inputs.iter_mut() {
+            quantize_column(column, quantiles_from_random_sample);
+        }
+    });
+    let tree = timed("build tree", ||build_tree(dataset, 5));
     println!("{:#?}", tree.map(&|d| mean(&d.labels)));
     Ok(())
 }
