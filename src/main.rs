@@ -1,7 +1,6 @@
 extern crate csv;
 
 use std::io;
-use std::mem;
 
 mod dataset;
 mod load_csv;
@@ -16,7 +15,6 @@ use crate::quantize::*;
 use crate::time::*;
 use crate::tree::*;
 use crate::util::*;
-use crate::variance::*;
 
 fn main() -> io::Result<()> {
     set_timing(true);

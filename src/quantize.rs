@@ -7,7 +7,9 @@ pub(crate) fn quantiles_from_random_sample(values: &[f32], nquantiles: usize) ->
     let nsamples = samples_per_quantile * nquantiles;
 
     let mut rng = rand::thread_rng();
-    let mut indices: Vec<usize> = (0..nsamples).map(|_| rng.gen_range(0, values.len())).collect();
+    let indices: Vec<usize> = (0..nsamples)
+        .map(|_| rng.gen_range(0, values.len()))
+        .collect();
     let mut samples: Vec<f32> = indices.iter().copied().map(|i| values[i]).collect();
     samples.sort_by(|a, b| compare_f32(*a, *b));
 
@@ -17,7 +19,6 @@ pub(crate) fn quantiles_from_random_sample(values: &[f32], nquantiles: usize) ->
         .collect()
 }
 
-/*
 #[allow(dead_code)]
 fn counts(values: &[f32], quantiles: &[f32]) -> Vec<usize> {
     let mut counts = quantiles.iter().map(|_| 0).collect::<Vec<usize>>();
@@ -30,25 +31,23 @@ fn counts(values: &[f32], quantiles: &[f32]) -> Vec<usize> {
     }
     counts
 }
-*/
 
 fn quantize(values: &[f32], quantiles: &[f32]) -> Vec<u8> {
     values
         .iter()
-        .map(|value|
-            binary_search(quantiles, *value) as u8
-        )
+        .map(|value| binary_search(quantiles, *value) as u8)
         .collect()
 }
 
 #[allow(clippy::single_match)]
+#[allow(dead_code)]
 #[inline(never)]
 pub fn quantize_column_by_random_sample(col: &mut Column) {
     match col {
         Column::Float(values) => {
             let quantiles = quantiles_from_random_sample(&values, 255);
             let qdata = quantize(&values, &quantiles);
-//            println!("{:?}", values.iter().zip(&qdata).take(1000).collect::<Vec<_>>());
+            //            println!("{:?}", values.iter().zip(&qdata).take(1000).collect::<Vec<_>>());
             *col = Column::QuantizedFloat(quantiles, qdata)
         }
         _ => {}
@@ -56,6 +55,7 @@ pub fn quantize_column_by_random_sample(col: &mut Column) {
 }
 
 #[allow(clippy::single_match)]
+#[allow(dead_code)]
 #[inline(never)]
 pub fn quantize_column_uniform(col: &mut Column) {
     match col {
@@ -75,7 +75,6 @@ pub fn quantize_column_uniform(col: &mut Column) {
             let quantiles = (1..nquantiles + 1)
                 .map(|i| min + step * (i as f32))
                 .collect();
-            let step_inv = ((nquantiles - 1) as f32) / (max - min);
 
             let qdata = values
                 .iter()

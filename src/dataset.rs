@@ -39,9 +39,6 @@ pub enum Column {
     Float(Vec<f32>),
 
     QuantizedFloat(Vec<f32>, Vec<u8>),
-
-    // FIXME: this is super inefficient.
-    String(Vec<String>),
 }
 
 impl Column {
@@ -61,10 +58,6 @@ impl Column {
                     QuantizedFloat(quantiles.clone(), left),
                     QuantizedFloat(quantiles.clone(), right),
                 )
-            }
-            Column::String(data) => {
-                let (left, right) = data.partition_by_index(predicate);
-                (Column::String(left), Column::String(right))
             }
         }
     }
