@@ -1,15 +1,14 @@
 use crate::dataset::*;
 use crate::util::*;
-use rand::seq::IteratorRandom;
+use rand::Rng;
 
 pub(crate) fn quantiles_from_random_sample(values: &[f32], nquantiles: usize) -> Vec<f32> {
     let samples_per_quantile = 100;
+    let nsamples = samples_per_quantile * nquantiles;
 
     let mut rng = rand::thread_rng();
-    let mut samples: Vec<f32> = values
-        .iter()
-        .copied()
-        .choose_multiple(&mut rng, nquantiles * samples_per_quantile);
+    let mut indices: Vec<usize> = (0..nsamples).map(|_| rng.gen_range(0, values.len())).collect();
+    let mut samples: Vec<f32> = indices.iter().copied().map(|i| values[i]).collect();
     samples.sort_by(|a, b| compare_f32(*a, *b));
 
     samples
