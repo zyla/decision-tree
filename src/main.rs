@@ -328,8 +328,8 @@ fn split(dataset: &Dataset) -> Option<(String, f32, Dataset, Dataset)> {
     }
 
     candidates.sort_by(|(_, _, _, v1), (_, _, _, v2)| compare_f32(*v1, *v2));
-    println!("*****************************");
-    println!("{:#?}", candidates);
+    //println!("*****************************");
+    //println!("{:#?}", candidates);
 
     let (colname, threshold_index, threshold, _variance) = candidates.swap_remove(0);
     let (left, right) = match &dataset.inputs[&colname] {
@@ -370,15 +370,12 @@ impl<T> Tree<T> {
 
 fn build_tree(dataset: Dataset, max_depth: usize) -> Tree<Dataset> {
     match split(&dataset) {
-        Some((colname, threshold, left, right)) if max_depth > 0 => {
-            println!("{} < {}", colname, threshold);
-            Tree::Branch(
-                colname,
-                threshold,
-                Box::new(build_tree(left, max_depth - 1)),
-                Box::new(build_tree(right, max_depth - 1)),
-            )
-        }
+        Some((colname, threshold, left, right)) if max_depth > 0 => Tree::Branch(
+            colname,
+            threshold,
+            Box::new(build_tree(left, max_depth - 1)),
+            Box::new(build_tree(right, max_depth - 1)),
+        ),
         _ => Tree::Leaf(dataset),
     }
 }
