@@ -35,11 +35,9 @@ fn counts(values: &[f32], quantiles: &[f32]) -> Vec<usize> {
 fn quantize(values: &[f32], quantiles: &[f32]) -> Vec<u8> {
     values
         .iter()
-        .map(|value| {
-            quantiles
-                .binary_search_by(|a| compare_f32(*a, *value))
-                .unwrap_or_else(|x| x) as u8
-        })
+        .map(|value|
+            binary_search(quantiles, *value) as u8
+        )
         .collect()
 }
 

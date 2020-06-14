@@ -36,3 +36,35 @@ impl<T: Clone> VecExt for Vec<T> {
         (left, right)
     }
 }
+
+#[inline(never)]
+pub fn binary_search(s: &[f32], t: f32) -> usize
+{
+    let mut size = s.len();
+    if size == 0 {
+        return 0;
+    }
+    let mut base = 0usize;
+    while size > 1 {
+        let half = size / 2;
+        let mid = base + half;
+        // mid is always in [0, size), that means mid is >= 0 and < size.
+        // mid >= 0: by definition
+        // mid < size: mid = size / 2 + size / 4 + size / 8 ...
+        base = if unsafe { *s.get_unchecked(mid) } > t { base } else { mid };
+        size -= half;
+    }
+    // base is always in [0, size) because base <= mid.
+    base
+}
+
+#[inline(never)]
+pub fn linear_search(s: &[f32], t: f32) -> usize
+{
+    for (i, &x) in s.iter().enumerate() {
+        if t < x {
+            return i;
+        }
+    }
+    s.len()
+}
