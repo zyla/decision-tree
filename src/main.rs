@@ -23,9 +23,7 @@ fn main() -> io::Result<()> {
     let filename = &std::env::args().collect::<Vec<_>>()[1];
     let file = std::fs::File::open(filename)?;
 
-    let mut dataset = timed("load csv", || {
-        Dataset::from_csv(file, "Humidity")
-    })?;
+    let mut dataset = timed("load csv", || Dataset::from_csv(file, "Humidity"))?;
     timed("quantize", || {
         for (_, column) in dataset.inputs.iter_mut() {
             quantize_column_by_random_sample(column);
