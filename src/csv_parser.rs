@@ -1,6 +1,4 @@
-use memchr::{memchr, memchr_iter};
-use memmap::Mmap;
-use std::io;
+use memchr::memchr;
 
 pub struct Reader<'a> {
     data: &'a [u8],
@@ -24,11 +22,11 @@ pub struct Record {
 }
 
 impl Record {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Record { chunks: vec![] }
     }
 
-    fn len(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.chunks.len()
     }
 }
@@ -82,6 +80,13 @@ impl<'a> Reader<'a> {
     pub fn get_datum(&self, record: &Record, column: usize) -> &[u8] {
         let (pos, len) = record.chunks[column];
         &self.data[pos..pos + len]
+    }
+
+    pub fn record_iter<'b>(&'b self, record: &'b Record) -> impl Iterator<Item = &'b [u8]> + 'b {
+        record
+            .chunks
+            .iter()
+            .map(move |(pos, len)| &self.data[*pos..*pos + *len])
     }
 }
 

@@ -1,4 +1,6 @@
+use crate::csv_parser;
 use crate::dataset::*;
+use memmap::Mmap;
 use std::collections::HashMap;
 
 impl Dataset {
@@ -6,46 +8,46 @@ impl Dataset {
     where
         S: AsRef<str>,
     {
-        let mut rdr = csv::Reader::from_reader(file);
-        let header = rdr.headers()?.clone();
-        let mut records = rdr.records();
-        let mut builders: Vec<(usize, String, Box<dyn ColumnBuilder>)> =
-            if let Some(Ok(record)) = records.next() {
-                header
-                    .iter()
-                    .zip(record.into_iter())
-                    .enumerate()
-                    .flat_map(|(index, (colname, value))| {
-                        if value.parse::<f32>().is_ok() {
-                            Some((
-                                index,
-                                colname.into(),
-                                Box::new(FloatColumnBuilder::default()) as Box<dyn ColumnBuilder>,
-                            ))
-                        } else {
-                            // Don't parse Strings for now
-                            // Some((colname.into(), Box::new(StringColumnBuilder::default()) as Box<dyn ColumnBuilder>))
-                            None
-                        }
-                    })
-                    .collect()
-            } else {
-                return Err(std::io::ErrorKind::NotFound.into());
-            };
+        let mmap = unsafe { Mmap::map(&file) }?;
+        let mut rdr = csv_parser::Reader::new(&*mmap);
+        let mut record = csv_parser::Record::new();
+        rdr.read_record(&mut record);
+        let mut builders: Vec<(usize, String, Box<dyn ColumnBuilder>)> = rdr
+            .record_iter(rdr.header())
+            .zip(rdr.record_iter(&record))
+            .enumerate()
+            .flat_map(|(index, (colname, value))| {
+                if String::from_utf8(value.to_vec())
+                    .unwrap()
+                    .parse::<f32>()
+                    .is_ok()
+                {
+                    Some((
+                        index,
+                        String::from_utf8(colname.to_vec()).unwrap(),
+                        Box::new(FloatColumnBuilder::default()) as Box<dyn ColumnBuilder>,
+                    ))
+                } else {
+                    // Don't parse Strings for now
+                    // Some((colname.into(), Box::new(StringColumnBuilder::default()) as Box<dyn ColumnBuilder>))
+                    None
+                }
+            })
+            .collect();
 
-        let mut chunk: Vec<csv::ByteRecord> = Vec::with_capacity(32);
+        let mut chunk: Vec<csv_parser::Record> = Vec::with_capacity(32);
         while chunk.len() < chunk.capacity() {
-            chunk.push(csv::ByteRecord::new());
+            chunk.push(csv_parser::Record::new());
         }
         let mut index_in_chunk = 0;
-        while rdr.read_byte_record(&mut chunk[index_in_chunk])? {
+        while rdr.read_record(&mut chunk[index_in_chunk]) {
             index_in_chunk += 1;
             if index_in_chunk == chunk.len() {
                 for (index, _, ref mut builder) in &mut builders {
                     builder.append(
                         &chunk
                             .iter()
-                            .map(|record| &record[*index])
+                            .map(|record| rdr.get_datum(record, *index))
                             .collect::<Vec<&[u8]>>(),
                     );
                 }
