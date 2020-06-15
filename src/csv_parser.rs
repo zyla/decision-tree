@@ -71,10 +71,10 @@ impl<'a> Reader<'a> {
             }
         }
         let rest = &data[self.pos..];
-        let last_len = memchr(b'\n', rest).unwrap_or(rest.len());
+        let last_len = memchr(b'\n', rest).unwrap_or_else(|| rest.len());
         record.chunks.push((self.pos, last_len));
         self.pos += last_len + 1;
-        return true;
+        true
     }
 
     pub fn get_datum(&self, record: &Record, column: usize) -> &[u8] {
