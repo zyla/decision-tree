@@ -2,11 +2,11 @@ use crate::dataset::*;
 use std::collections::HashMap;
 
 impl Dataset {
-    pub fn from_csv<F, S>(mut rdr: csv::Reader<F>, label_name: S) -> std::io::Result<Self>
+    pub fn from_csv<S>(file: std::fs::File, label_name: S) -> std::io::Result<Self>
     where
-        F: std::io::Read,
         S: AsRef<str>,
     {
+        let mut rdr = csv::Reader::from_reader(file);
         let header = rdr.headers()?.clone();
         let mut records = rdr.records();
         let mut builders: Vec<(usize, String, Box<dyn ColumnBuilder>)> =

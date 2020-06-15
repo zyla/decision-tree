@@ -20,8 +20,11 @@ use crate::util::*;
 fn main() -> io::Result<()> {
     set_timing(true);
 
+    let filename = &std::env::args().collect::<Vec<_>>()[1];
+    let file = std::fs::File::open(filename)?;
+
     let mut dataset = timed("load csv", || {
-        Dataset::from_csv(csv::Reader::from_reader(io::stdin()), "Humidity")
+        Dataset::from_csv(file, "Humidity")
     })?;
     timed("quantize", || {
         for (_, column) in dataset.inputs.iter_mut() {
