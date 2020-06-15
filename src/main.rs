@@ -2,6 +2,7 @@ extern crate csv;
 
 use std::io;
 
+mod csv_parser;
 mod dataset;
 mod load_csv;
 mod quantize;
