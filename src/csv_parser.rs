@@ -2,15 +2,19 @@ use memchr::{memchr, memchr_iter};
 use memmap::Mmap;
 use std::io;
 
-pub struct Reader<T> {
-    file: T,
-    num_columns: usize,
+pub struct Reader<'a> {
+    data: &'a [u8],
+    header: Record,
     pos: usize,
 }
 
-impl<T> Reader<T> {
+impl<'a> Reader<'a> {
     pub fn num_columns(&self) -> usize {
-        self.num_columns
+        self.header.len()
+    }
+
+    pub fn header(&self) -> &Record {
+        &self.header
     }
 }
 
@@ -23,22 +27,33 @@ impl Record {
     fn new() -> Self {
         Record { chunks: vec![] }
     }
+
+    fn len(&self) -> usize {
+        self.chunks.len()
+    }
 }
 
-impl<T: AsRef<[u8]>> Reader<T> {
-    pub fn new(file: T) -> Self {
-        let data: &[u8] = file.as_ref();
+impl<'a> Reader<'a> {
+    pub fn new(data: &'a [u8]) -> Self {
         let newline_pos = memchr(b'\n', data).unwrap_or(0);
-        let num_columns = memchr_iter(b',', &data[0..newline_pos]).count() + 1;
+        let mut header = Record::new();
+        {
+            let mut pos = 0;
+            while let Some(len) = memchr(b',', &data[pos..newline_pos]) {
+                header.chunks.push((pos, len));
+                pos += len + 1;
+            }
+            header.chunks.push((pos, newline_pos - pos));
+        }
         Reader {
-            file,
-            num_columns,
+            data,
+            header,
             pos: newline_pos + 1,
         }
     }
 
     pub fn read_record(&mut self, record: &mut Record) -> bool {
-        let data: &[u8] = self.file.as_ref();
+        let data = self.data;
 
         if self.pos >= data.len() {
             return false;
@@ -46,7 +61,7 @@ impl<T: AsRef<[u8]>> Reader<T> {
 
         record.chunks.clear();
 
-        for _ in 0..self.num_columns - 1 {
+        for _ in 0..self.num_columns() - 1 {
             match memchr(b',', &data[self.pos..]) {
                 Some(len) => {
                     record.chunks.push((self.pos, len));
@@ -64,15 +79,29 @@ impl<T: AsRef<[u8]>> Reader<T> {
         return true;
     }
 
-    pub fn get_datum<'a>(&'a self, record: &Record, column: usize) -> &'a [u8] {
+    pub fn get_datum(&self, record: &Record, column: usize) -> &[u8] {
         let (pos, len) = record.chunks[column];
-        &self.file.as_ref()[pos..pos + len]
+        &self.data[pos..pos + len]
     }
+}
+
+#[cfg(test)]
+fn record_to_strings<'a>(rdr: &Reader<'a>, record: &Record) -> Vec<String> {
+    (0..rdr.num_columns())
+        .map(|i| String::from_utf8(rdr.get_datum(record, i).to_vec()).unwrap())
+        .collect()
 }
 
 #[test]
 fn test_reader() {
-    let mut rdr = Reader::new(b"a,b,c\nfoo,bar,baz\nqux,beep,foo\n");
+    let input: &[u8] = b"Col1,b,col3\nfoo,bar,baz\nqux,beep,foo\n";
+    let mut rdr = Reader::new(input);
+
+    assert_eq!(
+        record_to_strings(&rdr, &rdr.header()),
+        vec!["Col1", "b", "col3"]
+    );
+
     let mut records = vec![];
     loop {
         let mut record = Record::new();
@@ -84,11 +113,7 @@ fn test_reader() {
 
     let data: Vec<Vec<String>> = records
         .iter()
-        .map(|record| {
-            (0..rdr.num_columns())
-                .map(|i| String::from_utf8(rdr.get_datum(record, i).to_vec()).unwrap())
-                .collect()
-        })
+        .map(|record| record_to_strings(&rdr, &record))
         .collect();
     assert_eq!(
         data,
